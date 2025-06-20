@@ -8,6 +8,7 @@ using namespace daisysp;
 // Objects used
 DaisyPod hw;
 Oscillator osc;
+AdEnv ad;
 
 // The number of different oscillator types
 const uint8_t waveform_count = 4;
@@ -31,7 +32,9 @@ Color waveform_colors[waveform_count];
 
 // Does the math for the next samples, passed as reference to save time since it is called so often
 void NextSamples(float &signal) {
+	float ad_this_sample = ad.Process();
 	signal = osc.Process();
+	signal *= ad_this_sample;
 }
 
 // Choose a random note
@@ -72,6 +75,13 @@ int main(void)
 	osc.SetAmp(1);
 	osc.SetWaveform(osc.WAVE_SAW);
 
+	ad.Init(sample_rate);
+	ad.SetTime(ADENV_SEG_ATTACK, 0.25);
+	ad.SetTime(ADENV_SEG_DECAY, 1.5);
+	ad.SetMax(1);
+	ad.SetMin(0);
+	ad.SetCurve(0);
+
 	// Start the ADC and the aduio processing
 	hw.StartAdc();
 	hw.StartAudio(AudioCallback);
@@ -97,12 +107,16 @@ int main(void)
 			}
 			
 			osc.SetWaveform(tambers[current_waveform]);
-		} else if (encoder_change < 0) {
-			current_waveform--;
-
-			if (current_waveform < 0) {
+		}
+		
+		if (encoder_change < 0) {
+			if (current_waveform == 0) {
 				current_waveform = waveform_count - 1;
+			} else {
+				current_waveform--;
 			}
+
+
 
 			osc.SetWaveform(tambers[current_waveform]);
 		}
@@ -113,12 +127,17 @@ int main(void)
 		// Process the buttons that are used to choose a random note
 		hw.ProcessDigitalControls();
 		if (hw.button1.Pressed()) {
+			ad.Trigger();
 			hw.led1.Set(0, 0, 1);
 		} else {
 			hw.led1.Set(0, 0, 0);
 		}
 		
 		if (hw.button1.RisingEdge()) {
+			if (!ad.IsRunning()) {
+				ad.Trigger();
+			}
+
 			UpdateNote();
 		}
 
