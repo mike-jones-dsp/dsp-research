@@ -8,6 +8,9 @@ using namespace daisysp;
 // Objects used
 DaisyPod hw;
 Oscillator osc;
+
+Oscillator fm_osc;
+
 AdEnv ad;
 
 // The number of different oscillator types
@@ -15,6 +18,19 @@ const uint8_t waveform_count = 4;
 
 // All the notes that it is possible to play
 float possible_notes[] = {220, 246.94, 261.63, 293.66, 329.63, 349.23, 392, 440, 493.88, 523.25, 587.33, 659.25, 698.46, 783.99, 880};
+
+// This variable stores the main oscillator's frequency
+float oscillator_frequency = possible_notes[0];
+
+// These correspond to the two potentiometers values
+float fm_knob = 0.0f;
+float fm_freq_knob = 0.0f;
+
+// The maixmum amount +- that the FM oscilator can change the main oscillator's frequency by
+const float fm_amount = 50.0f;
+
+// The maximum amount that the FM Oscillator's Frequency can be
+const float fm_freq_amount = 250.0f;
 
 // Different osc types
 uint8_t tambers[] = {
@@ -32,15 +48,29 @@ Color waveform_colors[waveform_count];
 
 // Does the math for the next samples, passed as reference to save time since it is called so often
 void NextSamples(float &signal) {
+	// First set the frequency for the FM Input
+	fm_osc.SetFreq(fm_freq_amount * fm_freq_knob);
+
+	// The main oscillator's frequency is a combination of the note frequency plus the frequency change introduced
+	// by the FM Oscillator
+
+	osc.SetFreq(oscillator_frequency + fm_osc.Process() * fm_knob * fm_amount);
+
+	// Process the current Attack Decay Envelope Sample
 	float ad_this_sample = ad.Process();
+
+	// Process the oscillator signal
 	signal = osc.Process();
+
+	// Multiply the oscillators signal by the attack decay envelope's sample to get the output of the synth
 	signal *= ad_this_sample;
 }
 
 // Choose a random note
 void UpdateNote() {
 	int random_note = rand() % 15;
-	osc.SetFreq(possible_notes[random_note]);
+	oscillator_frequency = possible_notes[random_note];
+	//osc.SetFreq(possible_notes[random_note]);
 }
 
 // The function used to process the audio
@@ -75,6 +105,13 @@ int main(void)
 	osc.SetAmp(1);
 	osc.SetWaveform(osc.WAVE_SAW);
 
+	// Intialize the FM Osc
+	fm_osc.Init(sample_rate);
+	fm_osc.SetFreq(50);
+	fm_osc.SetAmp(1);
+	fm_osc.SetWaveform(fm_osc.WAVE_TRI);
+
+	// The Attack Decay Envelope's initialization
 	ad.Init(sample_rate);
 	ad.SetTime(ADENV_SEG_ATTACK, 0.25);
 	ad.SetTime(ADENV_SEG_DECAY, 1.5);
@@ -106,18 +143,19 @@ int main(void)
 				current_waveform = 0;
 			}
 			
+			// Set the changed waveform
 			osc.SetWaveform(tambers[current_waveform]);
 		}
 		
 		if (encoder_change < 0) {
-			if (current_waveform == 0) {
+			// Its an unsigned int so make sure it doesn't go into the negatives
+			if (current_waveform <= 0) {
 				current_waveform = waveform_count - 1;
 			} else {
 				current_waveform--;
 			}
 
-
-
+			// If the waveform has changed, set it
 			osc.SetWaveform(tambers[current_waveform]);
 		}
 
@@ -133,13 +171,20 @@ int main(void)
 			hw.led1.Set(0, 0, 0);
 		}
 		
+		// When the button is just pressed, trigger the AD envelope
 		if (hw.button1.RisingEdge()) {
 			if (!ad.IsRunning()) {
 				ad.Trigger();
 			}
 
+			// Pick a new random note
 			UpdateNote();
 		}
+
+		// Set the two values corresponding to knob1 and knob2
+		hw.ProcessAnalogControls();
+		fm_knob = hw.knob1.Process();
+		fm_freq_knob = hw.knob2.Process();
 
 		// Update the status of the LEDs
 		hw.UpdateLeds();
