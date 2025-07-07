@@ -32,5 +32,10 @@ int main(void)
 		hw.UpdateLeds();
 
 		System::Delay(DELAY_TIME);
+
+		hw.led1.Set(1, 1, 1);
+		hw.UpdateLeds();
+
+		System::Delay(DELAY_TIME);
 	}
 }
